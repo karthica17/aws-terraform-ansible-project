@@ -1,0 +1,72 @@
+name: Deploy Infrastructure and Website
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::942548380469:role/GitHubActionsTerraformRole
+          aws-region: ca-central-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+      - name: Get EC2 Public IP
+        id: tf_output
+        working-directory: terraform
+        run: echo "ec2_ip=$(terraform output -raw instance_public_ip)" >> $GITHUB_OUTPUT
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem
+
+      - name: Create Ansible Inventory
+        run: |
+          echo "[web]" > ansible/inventory.ini
+          echo "${{ steps.tf_output.outputs.ec2_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=/home/runner/.ssh/ec2_key.pem ansible_ssh_common_args='-o StrictHostKeyChecking=no'" >> ansible/inventory.ini
+
+      - name: Run Ansible Playbook
+        run: |
+          sleep 60
+          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml

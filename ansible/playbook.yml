@@ -1,0 +1,26 @@
+---
+- name: Install Nginx and deploy website
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Deploy website files
+      copy:
+        src: ../website/
+        dest: /var/www/html/
+        mode: '0644'
+
+    - name: Start and enable Nginx
+      service:
+        name: nginx
+        state: started
+        enabled: yes
